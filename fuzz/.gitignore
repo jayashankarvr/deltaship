@@ -1,0 +1,5 @@
+# Fuzzing artifacts
+artifacts/
+corpus/
+target/
+Cargo.lock

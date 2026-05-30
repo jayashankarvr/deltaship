@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1.6
+#
+# Multi-stage build for the VBDP Update Server.
+# Build context is expected to be the repository root, e.g.:
+#     docker build -f deploy/Dockerfile.server -t vbdp-server .
+#
+# The server is a self-contained REST API with file-based storage. It does NOT
+# embed sqlx migrations and does NOT link against system SQLite. Runtime deps
+# are limited to libc + CA certificates (rustls is used for outbound TLS).
+
+# ---------- Builder ----------
+FROM rust:1.75-slim-bookworm AS builder
+
+# Build deps: pkg-config + libssl-dev are not strictly required (rustls), but
+# clang/cc and git keep build scripts happy on a slim base.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        build-essential \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy the full workspace. We rely on cargo's incremental layer caching via
+# BuildKit's mount caches rather than the manifest-only trick, because the
+# workspace has tightly coupled path deps that make the trick brittle.
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release -p vbdp-server \
+    && cp /build/target/release/vbdp-server /usr/local/bin/vbdp-server
+
+# ---------- Runtime ----------
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 vbdp \
+    && useradd --system --uid 10001 --gid vbdp --home-dir /var/lib/vbdp --shell /usr/sbin/nologin vbdp \
+    && mkdir -p /var/lib/vbdp/data \
+    && chown -R vbdp:vbdp /var/lib/vbdp
+
+COPY --from=builder /usr/local/bin/vbdp-server /usr/local/bin/vbdp-server
+
+USER vbdp
+WORKDIR /var/lib/vbdp
+
+# Server listens on 8080 by default. Bind to 0.0.0.0 inside the container so
+# the reverse proxy on the same docker network can reach it.
+EXPOSE 8080
+
+# All vbdp-server configuration is via CLI flags; the only env var the server
+# itself reads is VBDP_CORS_ORIGINS (set in docker-compose.yml, not here).
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/vbdp-server"]
+CMD ["--host", "0.0.0.0", "--port", "8080", "--data-dir", "/var/lib/vbdp/data"]

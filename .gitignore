@@ -1,0 +1,254 @@
+# VBDP Project .gitignore
+
+# Rust
+# ====
+# Compiled files
+target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock file (uncomment if this is a library)
+# Cargo.lock
+
+# Build artifacts
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+
+# Executables
+*.exe
+vbdp-server
+vbdp-publisher
+vbdp-client
+devcert
+
+# Rust profiling
+*.profraw
+*.profdata
+
+# Flamegraph outputs
+flamegraph.svg
+perf.data
+perf.data.old
+
+
+# IDEs and Editors
+# ================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs (IntelliJ IDEA, CLion, RustRover)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*~
+.*.sw?
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+
+# Operating Systems
+# =================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+
+# VBDP-Specific
+# =============
+# Private keys (CRITICAL: Never commit private keys!)
+*.key
+*.pem
+!.vbdp/keys/.gitkeep
+.vbdp/keys/private.key
+.vbdp/keys/*.key
+
+# Configuration files with secrets
+.env
+.env.local
+.env.production
+config/secrets.toml
+config/production.toml
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Local development data
+data/
+storage/
+cache/
+tmp/
+
+# Binary artifacts
+dist/
+binaries/
+releases/
+
+# Diff files (can be large)
+*.diff
+*.patch
+diffs/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Test coverage
+coverage/
+*.gcda
+*.gcno
+*.profdata
+lcov.info
+tarpaulin-report.html
+
+
+# Documentation Build
+# ===================
+# mdBook
+book/
+docs/book/
+
+# Sphinx
+_build/
+_static/
+_templates/
+
+# Generated documentation
+target/doc/
+
+# Internal development / review docs (kept locally, never published)
+# ================================================================
+/SENIOR_ENGINEER_REVIEW.md
+/docs/TODO.md
+/docs/CODE_REVIEW_FINDINGS.md
+/docs/FIXES_APPLIED.md
+/docs/P0_INFRASTRUCTURE_FIXES.md
+
+
+# CI/CD Artifacts
+# ===============
+# GitHub Actions
+.github/workflows/artifacts/
+
+# Test results
+test-results/
+junit.xml
+
+
+# Package Managers
+# ================
+# Node.js (for tooling)
+node_modules/
+package-lock.json
+yarn.lock
+npm-debug.log
+
+# Python (for scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+
+# Benchmarking
+# ============
+criterion/
+benchmarks/*.txt
+
+
+# Security and Secrets
+# ====================
+# API keys
+*.apikey
+api_keys.txt
+
+# Certificates (except test certs)
+*.crt
+*.cer
+*.p12
+*.pfx
+!test/fixtures/*.crt
+!test/fixtures/*.pem
+
+# GPG
+secring.*
+
+
+# Temporary Files
+# ===============
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+
+
+# Project-Specific Exclusions
+# ============================
+# Large test binaries
+test/fixtures/large-binaries/
+
+# Generated test data
+test/generated/
+
+# Local server storage
+server-storage/
+
+# Publisher workspace
+publisher-workspace/
+.publisher/
+
+# Client update cache
+.vbdp-client/cache/
+
+
+# Allow specific files
+# ====================
+# Keep directory structure
+!**/.gitkeep
+
+# Keep example configs (without secrets)
+!config/example.toml
+!config/development.example.toml
+
+# Keep test fixtures
+!test/fixtures/**/*.bin
+!test/fixtures/**/*.dat

@@ -1,0 +1,21 @@
+[package]
+name = "vbdp-db"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "SQLite database layer for VBDP Publisher Toolkit and Client Patcher"
+
+[dependencies]
+sqlx.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+semver.workspace = true
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+vbdp-core = { path = "../vbdp-core" }
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,28 @@
+[package]
+name = "vbdp-diff"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Binary diff/patch operations using bsdiff algorithm"
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["compression"]
+compression = ["dep:zstd"]
+
+[dependencies]
+bsdiff = "0.2"
+blake3.workspace = true
+thiserror.workspace = true
+
+# Optional compression
+zstd = { version = "0.13", optional = true }
+
+[dev-dependencies]
+blake3.workspace = true
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "diff_bench"
+harness = false

@@ -1,0 +1,38 @@
+# Minimal Caddyfile for VBDP update server.
+# DOMAIN and ACME_EMAIL come from the docker-compose environment (.env).
+
+{
+	email {$ACME_EMAIL}
+	# Uncomment the next line for staging certs while testing:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Sensible upload ceiling. The server itself accepts up to 2 GiB bodies
+	# (see DefaultBodyLimit in crates/vbdp-server/src/main.rs); raise this if
+	# you publish very large binaries through the proxy.
+	request_body {
+		max_size 2GB
+	}
+
+	reverse_proxy vbdp-server:8080 {
+		# Forward client info so the server's rate limiter and audit logs
+		# see the real remote IP rather than the proxy.
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

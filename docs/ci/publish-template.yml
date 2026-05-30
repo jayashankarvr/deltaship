@@ -1,0 +1,158 @@
+# VBDP publish workflow. Copy to .github/workflows/publish.yml in your app
+# repo. Triggers on tag push (vX.Y.Z). Builds on four platforms, then
+# registers + signs + publishes each binary to a vbdp-server.
+# Required secrets: VBDP_SERVER_URL, VBDP_API_KEY, VBDP_SIGNING_KEY,
+# VBDP_SIGNING_PASSPHRASE. See docs/ci/README.md.
+
+name: Publish to VBDP
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  # CHANGE ME: your application's binary name (must match `cargo build` output).
+  APP_NAME: myapp
+  # Pin the vbdp-publisher version your CI uses. There are no public binary
+  # releases of vbdp-publisher yet, so we build it from source at this ref.
+  # CHANGE ME (optional): bump to a tagged release once jayashankarvr/vbdp ships them.
+  VBDP_REF: main
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            ext: ''
+          - os: macos-13
+            platform: macos-x86_64
+            ext: ''
+          - os: macos-14
+            platform: macos-aarch64
+            ext: ''
+          - os: windows-latest
+            platform: windows-x86_64
+            ext: '.exe'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
+
+      # CHANGE ME: replace with your app's build command if it isn't a single
+      # cargo crate at the repo root. The output binary must land at
+      # target/release/${APP_NAME}${ext}.
+      - name: Build application binary
+        shell: bash
+        run: cargo build --release --bin "${APP_NAME}"
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p staging
+          cp "target/release/${APP_NAME}${{ matrix.ext }}" "staging/${APP_NAME}${{ matrix.ext }}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.platform }}
+          path: staging/*
+          retention-days: 1
+
+  publish:
+    name: Publish to VBDP server
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: vbdp-publisher-${{ env.VBDP_REF }}
+
+      # Build vbdp-publisher from source. There is no public binary release of
+      # vbdp-publisher at the time this template was written; switch to a
+      # `gh release download` step once one exists.
+      - name: Build vbdp-publisher
+        run: |
+          git clone --depth 1 --branch "${VBDP_REF}" https://github.com/jayashankarvr/vbdp.git /tmp/vbdp
+          cargo build --release --manifest-path /tmp/vbdp/Cargo.toml -p vbdp-publisher
+          sudo install -m 0755 /tmp/vbdp/target/release/vbdp-publisher /usr/local/bin/vbdp-publisher
+          vbdp-publisher --version
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # `register` requires the publisher DB to exist (`vbdp-publisher init`
+      # creates it). We init with the real passphrase, then overwrite the
+      # generated signing key with the persistent one from secrets so every
+      # release in this repo uses the same keypair.
+      - name: Initialise publisher workspace
+        env:
+          VBDP_SERVER_URL: ${{ secrets.VBDP_SERVER_URL }}
+          VBDP_SIGNING_KEY: ${{ secrets.VBDP_SIGNING_KEY }}
+          VBDP_SIGNING_PASSPHRASE: ${{ secrets.VBDP_SIGNING_PASSPHRASE }}
+        run: |
+          vbdp-publisher init --passphrase "$VBDP_SIGNING_PASSPHRASE"
+          printf '%s' "$VBDP_SIGNING_KEY" > .vbdp/keys/signing.key
+          chmod 600 .vbdp/keys/signing.key
+          vbdp-publisher config set server.url "$VBDP_SERVER_URL"
+
+      - name: Register, sign, and publish each platform
+        env:
+          VERSION: ${{ github.ref_name }}
+          VBDP_SERVER_URL: ${{ secrets.VBDP_SERVER_URL }}
+          VBDP_API_KEY: ${{ secrets.VBDP_API_KEY }}
+          VBDP_SIGNING_PASSPHRASE: ${{ secrets.VBDP_SIGNING_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Strip the leading 'v' from the tag (v1.2.3 -> 1.2.3) for semver.
+          SEMVER="${VERSION#v}"
+
+          # CHANGE ME: add or remove platforms here to match the build matrix.
+          declare -A PLATFORMS=(
+            [linux-x86_64]=""
+            [macos-x86_64]=""
+            [macos-aarch64]=""
+            [windows-x86_64]=".exe"
+          )
+
+          for platform in "${!PLATFORMS[@]}"; do
+            ext="${PLATFORMS[$platform]}"
+            bin="artifacts/app-${platform}/${APP_NAME}${ext}"
+
+            echo "::group::Publish ${APP_NAME} ${SEMVER} (${platform})"
+            vbdp-publisher register \
+              --name "$APP_NAME" \
+              --version "$SEMVER" \
+              --file "$bin" \
+              --platform "$platform" \
+              --description "Release ${VERSION}"
+
+            vbdp-publisher sign \
+              --name "$APP_NAME" \
+              --version "$SEMVER" \
+              --passphrase "$VBDP_SIGNING_PASSPHRASE"
+
+            vbdp-publisher publish \
+              --name "$APP_NAME" \
+              --version "$SEMVER" \
+              --server-url "$VBDP_SERVER_URL" \
+              --api-key "$VBDP_API_KEY" \
+              --yes
+            echo "::endgroup::"
+          done

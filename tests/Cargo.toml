@@ -1,0 +1,48 @@
+[package]
+name = "vbdp-integration-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "concurrent_locking.rs"
+
+[[test]]
+name = "end_to_end"
+path = "end_to_end.rs"
+
+[[test]]
+name = "e2e_pipeline"
+path = "e2e_pipeline.rs"
+
+[dependencies]
+# VBDP crates for integration testing (P3 Issue #114)
+vbdp-core = { path = "../crates/vbdp-core" }
+vbdp-db = { path = "../crates/vbdp-db" }
+vbdp-diff = { path = "../crates/vbdp-diff" }
+vbdp-crypto = { path = "../crates/vbdp-crypto" }
+
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+
+# File locking
+fs2 = "0.4"
+
+# JSON parsing for catalog tests
+serde_json = "1.0"
+
+# Temporary directories
+tempfile = "3.0"
+
+# HTTP mocking for integration tests (P1 Issue #6)
+wiremock = "0.6"
+
+# HTTP client for integration tests
+reqwest = { version = "0.12", features = ["json"] }
+
+# Cryptography dependencies for E2E testing
+blake3 = "1.5"
+hex = "0.4"
+
+[dev-dependencies]
+# None needed - using standard test framework

@@ -1,0 +1,723 @@
+{
+  "dashboard": {
+    "title": "VBDP Update Server - Production Dashboard",
+    "description": "Comprehensive monitoring dashboard for VBDP update server infrastructure",
+    "tags": ["vbdp", "updates", "binary-diff"],
+    "timezone": "browser",
+    "editable": true,
+    "graphTooltip": 1,
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "refresh": "30s",
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "tags": ["deployment"]
+        },
+        {
+          "name": "Incidents",
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "iconColor": "rgba(255, 96, 96, 1)",
+          "tags": ["incident"]
+        }
+      ]
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "datasource",
+          "type": "datasource",
+          "query": "prometheus",
+          "current": {
+            "text": "Prometheus",
+            "value": "Prometheus"
+          }
+        },
+        {
+          "name": "instance",
+          "type": "query",
+          "datasource": "$datasource",
+          "query": "label_values(up{job=\"vbdp-server\"}, instance)",
+          "multi": true,
+          "includeAll": true,
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          }
+        },
+        {
+          "name": "app",
+          "type": "query",
+          "datasource": "$datasource",
+          "query": "label_values(vbdp_updates_total, app)",
+          "multi": true,
+          "includeAll": true,
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          }
+        }
+      ]
+    },
+    "panels": [
+      {
+        "type": "row",
+        "title": "System Health Overview",
+        "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Server Uptime",
+        "gridPos": { "x": 0, "y": 1, "w": 4, "h": 4 },
+        "targets": [
+          {
+            "expr": "time() - process_start_time_seconds{job=\"vbdp-server\", instance=~\"$instance\"}",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "red" },
+                { "value": 3600, "color": "yellow" },
+                { "value": 86400, "color": "green" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "type": "stat",
+        "title": "API Request Rate",
+        "gridPos": { "x": 4, "y": 1, "w": 4, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(rate(vbdp_api_requests_total{instance=~\"$instance\"}[5m]))",
+            "legendFormat": "Requests/sec"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Error Rate",
+        "gridPos": { "x": 8, "y": 1, "w": 4, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(rate(vbdp_api_requests_total{status=~\"5..\", instance=~\"$instance\"}[5m])) / sum(rate(vbdp_api_requests_total{instance=~\"$instance\"}[5m])) * 100"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 2,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 1, "color": "yellow" },
+                { "value": 5, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "Active Connections",
+        "gridPos": { "x": 12, "y": 1, "w": 4, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(vbdp_api_active_connections{instance=~\"$instance\"})"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 5,
+        "type": "stat",
+        "title": "Update Success Rate",
+        "gridPos": { "x": 16, "y": 1, "w": 4, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(rate(vbdp_updates_total{success=\"true\", instance=~\"$instance\"}[5m])) / sum(rate(vbdp_updates_total{instance=~\"$instance\"}[5m])) * 100"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 2,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "red" },
+                { "value": 95, "color": "yellow" },
+                { "value": 99, "color": "green" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "type": "stat",
+        "title": "Bandwidth Saved Today",
+        "gridPos": { "x": 20, "y": 1, "w": 4, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(increase(vbdp_bandwidth_saved_bytes_total{instance=~\"$instance\"}[24h]))"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes",
+            "decimals": 2,
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "type": "row",
+        "title": "API Performance",
+        "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "id": 10,
+        "type": "timeseries",
+        "title": "API Request Rate by Endpoint",
+        "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum by (endpoint) (rate(vbdp_api_requests_total{instance=~\"$instance\"}[5m]))",
+            "legendFormat": "{{endpoint}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "fillOpacity": 10,
+              "showPoints": "never"
+            },
+            "unit": "reqps"
+          }
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }
+        }
+      },
+      {
+        "id": 11,
+        "type": "timeseries",
+        "title": "API Latency (Percentiles)",
+        "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(vbdp_api_request_duration_seconds_bucket{instance=~\"$instance\"}[5m])) by (le))",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(vbdp_api_request_duration_seconds_bucket{instance=~\"$instance\"}[5m])) by (le))",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(vbdp_api_request_duration_seconds_bucket{instance=~\"$instance\"}[5m])) by (le))",
+            "legendFormat": "p99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "fillOpacity": 0
+            },
+            "unit": "s"
+          },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "p50" },
+              "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+            },
+            {
+              "matcher": { "id": "byName", "options": "p95" },
+              "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }]
+            },
+            {
+              "matcher": { "id": "byName", "options": "p99" },
+              "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+            }
+          ]
+        }
+      },
+      {
+        "id": 12,
+        "type": "timeseries",
+        "title": "HTTP Status Codes",
+        "gridPos": { "x": 0, "y": 14, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "sum by (status) (rate(vbdp_api_requests_total{instance=~\"$instance\"}[5m]))",
+            "legendFormat": "{{status}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 20,
+              "stacking": { "mode": "normal" }
+            },
+            "unit": "reqps"
+          }
+        }
+      },
+      {
+        "id": 13,
+        "type": "timeseries",
+        "title": "Error Rate by Endpoint",
+        "gridPos": { "x": 12, "y": 14, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "sum by (endpoint) (rate(vbdp_api_requests_total{status=~\"5..\", instance=~\"$instance\"}[5m]))",
+            "legendFormat": "{{endpoint}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "bars",
+              "fillOpacity": 80
+            },
+            "unit": "reqps",
+            "color": { "mode": "palette-classic" }
+          }
+        }
+      },
+      {
+        "type": "row",
+        "title": "Update Statistics",
+        "gridPos": { "x": 0, "y": 20, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "id": 20,
+        "type": "timeseries",
+        "title": "Updates per Minute",
+        "gridPos": { "x": 0, "y": 21, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum by (app, method) (rate(vbdp_updates_total{app=~\"$app\", instance=~\"$instance\"}[5m]) * 60)",
+            "legendFormat": "{{app}} ({{method}})"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 20
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 21,
+        "type": "piechart",
+        "title": "Update Method Distribution",
+        "gridPos": { "x": 12, "y": 21, "w": 6, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum by (method) (increase(vbdp_updates_total{app=~\"$app\", instance=~\"$instance\"}[24h]))",
+            "legendFormat": "{{method}}"
+          }
+        ],
+        "options": {
+          "pieType": "donut",
+          "displayLabels": ["name", "percent"],
+          "legend": { "displayMode": "table", "placement": "right" }
+        }
+      },
+      {
+        "id": 22,
+        "type": "stat",
+        "title": "Total Updates (24h)",
+        "gridPos": { "x": 18, "y": 21, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(increase(vbdp_updates_total{app=~\"$app\", instance=~\"$instance\"}[24h]))"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 0
+          }
+        }
+      },
+      {
+        "id": 23,
+        "type": "stat",
+        "title": "Bandwidth Savings Ratio",
+        "gridPos": { "x": 18, "y": 25, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "(sum(increase(vbdp_bandwidth_saved_bytes_total{instance=~\"$instance\"}[24h])) / (sum(increase(vbdp_bandwidth_saved_bytes_total{instance=~\"$instance\"}[24h])) + sum(increase(vbdp_bandwidth_used_bytes_total{instance=~\"$instance\"}[24h])))) * 100"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "none"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "red" },
+                { "value": 80, "color": "yellow" },
+                { "value": 90, "color": "green" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "type": "row",
+        "title": "Diff Generation Performance",
+        "gridPos": { "x": 0, "y": 29, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "id": 30,
+        "type": "timeseries",
+        "title": "Diff Generation Duration by Algorithm",
+        "gridPos": { "x": 0, "y": 30, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum by (algorithm, le) (rate(vbdp_diff_generation_duration_seconds_bucket{instance=~\"$instance\"}[5m])))",
+            "legendFormat": "{{algorithm}} (p95)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 10
+            },
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 31,
+        "type": "timeseries",
+        "title": "Diff Size Over Time",
+        "gridPos": { "x": 12, "y": 30, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "vbdp_diff_size_bytes{app=~\"$app\", instance=~\"$instance\"}",
+            "legendFormat": "{{app}} {{from_version}}→{{to_version}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "points",
+              "pointSize": 5
+            },
+            "unit": "bytes"
+          }
+        }
+      },
+      {
+        "type": "row",
+        "title": "Database Performance",
+        "gridPos": { "x": 0, "y": 38, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "id": 40,
+        "type": "timeseries",
+        "title": "Database Query Duration",
+        "gridPos": { "x": 0, "y": 39, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum by (query_type, le) (rate(vbdp_database_query_duration_seconds_bucket{instance=~\"$instance\"}[5m])))",
+            "legendFormat": "{{query_type}} (p95)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 10
+            },
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 41,
+        "type": "timeseries",
+        "title": "Database Connection Pool",
+        "gridPos": { "x": 12, "y": 39, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "sum by (state) (vbdp_database_connections{instance=~\"$instance\"})",
+            "legendFormat": "{{state}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 20,
+              "stacking": { "mode": "normal" }
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "type": "row",
+        "title": "System Resources",
+        "gridPos": { "x": 0, "y": 47, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "id": 50,
+        "type": "timeseries",
+        "title": "CPU Usage",
+        "gridPos": { "x": 0, "y": 48, "w": 6, "h": 6 },
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\", instance=~\"$instance\"}[5m])) * 100)",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 20
+            },
+            "unit": "percent",
+            "max": 100,
+            "min": 0
+          }
+        }
+      },
+      {
+        "id": 51,
+        "type": "timeseries",
+        "title": "Memory Usage",
+        "gridPos": { "x": 6, "y": 48, "w": 6, "h": 6 },
+        "targets": [
+          {
+            "expr": "(1 - (node_memory_MemAvailable_bytes{instance=~\"$instance\"} / node_memory_MemTotal_bytes{instance=~\"$instance\"})) * 100",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 20
+            },
+            "unit": "percent",
+            "max": 100,
+            "min": 0
+          }
+        }
+      },
+      {
+        "id": 52,
+        "type": "timeseries",
+        "title": "Disk Usage",
+        "gridPos": { "x": 12, "y": 48, "w": 6, "h": 6 },
+        "targets": [
+          {
+            "expr": "(1 - (node_filesystem_avail_bytes{mountpoint=\"/var/lib/vbdp\", instance=~\"$instance\"} / node_filesystem_size_bytes{mountpoint=\"/var/lib/vbdp\", instance=~\"$instance\"})) * 100",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 20
+            },
+            "unit": "percent",
+            "max": 100,
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 80, "color": "yellow" },
+                { "value": 90, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 53,
+        "type": "timeseries",
+        "title": "Network I/O",
+        "gridPos": { "x": 18, "y": 48, "w": 6, "h": 6 },
+        "targets": [
+          {
+            "expr": "rate(node_network_receive_bytes_total{instance=~\"$instance\"}[5m])",
+            "legendFormat": "RX {{instance}}"
+          },
+          {
+            "expr": "rate(node_network_transmit_bytes_total{instance=~\"$instance\"}[5m])",
+            "legendFormat": "TX {{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 10
+            },
+            "unit": "Bps"
+          }
+        }
+      },
+      {
+        "type": "row",
+        "title": "Storage Operations",
+        "gridPos": { "x": 0, "y": 54, "w": 24, "h": 1 },
+        "collapsed": false
+      },
+      {
+        "id": 60,
+        "type": "timeseries",
+        "title": "Storage Operations Rate",
+        "gridPos": { "x": 0, "y": 55, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "sum by (operation) (rate(vbdp_storage_operations_total{status=\"success\", instance=~\"$instance\"}[5m]))",
+            "legendFormat": "{{operation}} (success)"
+          },
+          {
+            "expr": "sum by (operation) (rate(vbdp_storage_operations_total{status=\"error\", instance=~\"$instance\"}[5m]))",
+            "legendFormat": "{{operation}} (error)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 10
+            },
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 61,
+        "type": "timeseries",
+        "title": "Storage Used by Type",
+        "gridPos": { "x": 12, "y": 55, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "expr": "sum by (type) (vbdp_storage_used_bytes{instance=~\"$instance\"})",
+            "legendFormat": "{{type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "fillOpacity": 20,
+              "stacking": { "mode": "normal" }
+            },
+            "unit": "bytes"
+          }
+        }
+      }
+    ]
+  },
+  "overwrite": true,
+  "inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "value": "Prometheus"
+    }
+  ],
+  "version": 1,
+  "schemaVersion": 38
+}
