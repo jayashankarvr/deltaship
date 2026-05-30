@@ -1,0 +1,46 @@
+[package]
+name = "deltaship-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# Dependencies for fuzzing different components
+deltaship-core = { path = "../crates/deltaship-core" }
+deltaship-diff = { path = "../crates/deltaship-diff" }
+deltaship-crypto = { path = "../crates/deltaship-crypto" }
+semver = "1.0"
+url = "2.5"
+
+# Prevent this from interfering with normal builds
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "fuzz_version_string"
+path = "fuzz_targets/fuzz_version_string.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_url_parsing"
+path = "fuzz_targets/fuzz_url_parsing.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_binary_name"
+path = "fuzz_targets/fuzz_binary_name.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_diff_patch"
+path = "fuzz_targets/fuzz_diff_patch.rs"
+test = false
+doc = false

@@ -1,0 +1,44 @@
+[package]
+name = "deltaship-publisher"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Publisher Toolkit CLI for Deltaship"
+
+[[bin]]
+name = "deltaship-publisher"
+path = "src/main.rs"
+
+[dependencies]
+deltaship-core.workspace = true
+deltaship-crypto.workspace = true
+deltaship-db.workspace = true
+deltaship-diff.workspace = true
+
+clap.workspace = true
+clap_complete = "4"
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow = "1.0"
+
+chrono = { version = "0.4", features = ["serde"] }
+semver.workspace = true
+sha2 = "0.10"
+rpassword = "7.3"
+zeroize.workspace = true
+blake3.workspace = true
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+walkdir = "2.5"
+tar = "0.4"
+flate2 = "1.0"
+tempfile = "3.14"
+fs2 = "0.4"
+hex = "0.4"
+url = "2.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+indicatif = "0.17"

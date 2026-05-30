@@ -1,0 +1,64 @@
+[package]
+name = "deltaship-client"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deltaship client patcher - automatic binary update daemon"
+
+[[bin]]
+name = "deltaship-client"
+path = "src/main.rs"
+
+[[bin]]
+name = "deltaship-updater"
+path = "src/bin/deltaship-updater.rs"
+
+[dependencies]
+# Internal crates
+deltaship-core.workspace = true
+deltaship-crypto.workspace = true
+deltaship-db.workspace = true
+deltaship-diff.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# HTTP client
+reqwest = { workspace = true, features = ["stream"] }
+
+# Async utilities
+futures-util = "0.3"
+
+# CLI
+clap.workspace = true
+clap_complete = "4"
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+toml = "0.8"
+
+# Error handling
+thiserror.workspace = true
+anyhow = "1.0"
+
+# Utilities
+dirs = "5.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.11", features = ["v4"] }
+walkdir = "2.5"
+chrono = "0.4"
+blake3.workspace = true
+indicatif = "0.17"
+sysinfo = "0.32"
+tempfile = "3.13"
+fs2 = "0.4"
+url = "2.5"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+syslog = "7.0"
+log = "0.4"

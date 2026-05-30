@@ -1,0 +1,485 @@
+# Prometheus Alert Rules for Deltaship Update Server
+# This file defines production-ready alert rules for monitoring Deltaship infrastructure
+#
+# Usage:
+#   1. Copy this file to your Prometheus rules directory
+#   2. Update prometheus.yml to include this file:
+#      rule_files:
+#        - "prometheus-alerts.yml"
+#   3. Reload Prometheus configuration: kill -HUP <prometheus-pid>
+#   4. Verify rules loaded: http://prometheus:9090/rules
+#
+# Alert Severity Levels:
+#   - critical: Requires immediate action, pages on-call engineer
+#   - high: Requires attention within 1 hour, sends urgent notification
+#   - medium: Should be addressed within 24 hours
+#   - low: Informational, can be addressed during business hours
+
+groups:
+  # ============================================================================
+  # CRITICAL ALERTS - Immediate Response Required
+  # ============================================================================
+
+  - name: deltaship_critical_alerts
+    interval: 30s
+    rules:
+      # Server availability
+      - alert: DeltashipServerDown
+        expr: up{job="deltaship-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: server
+        annotations:
+          summary: "Deltaship server {{ $labels.instance }} is down"
+          description: "Server has been unreachable for more than 2 minutes. Check server status immediately."
+          runbook: "https://docs.deltaship.io/runbooks#server-down"
+          dashboard: "https://grafana.example.com/d/deltaship-overview"
+
+      # Database connectivity
+      - alert: DeltashipDatabaseDown
+        expr: pg_up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Deltaship PostgreSQL database is down"
+          description: "Cannot connect to database on {{ $labels.instance }}. All update operations will fail."
+          runbook: "https://docs.deltaship.io/runbooks#database-down"
+
+      # High error rate
+      - alert: DeltashipHighErrorRate
+        expr: |
+          (
+            sum(rate(deltaship_api_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(deltaship_api_requests_total[5m]))
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High error rate: {{ $value | humanizePercentage }}"
+          description: "API error rate above 5% for 10 minutes. Current: {{ $value | humanizePercentage }}"
+          runbook: "https://docs.deltaship.io/runbooks#high-error-rate"
+
+      # Out of memory
+      - alert: DeltashipServerOutOfMemory
+        expr: |
+          (
+            1 - (
+              node_memory_MemAvailable_bytes{job="node"}
+              /
+              node_memory_MemTotal_bytes{job="node"}
+            )
+          ) > 0.95
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Server {{ $labels.instance }} is running out of memory"
+          description: "Memory usage above 95% for 5 minutes. Available: {{ $value | humanizePercentage }}"
+          runbook: "https://docs.deltaship.io/runbooks#out-of-memory"
+
+      # Disk full
+      - alert: DeltashipDiskCriticallyFull
+        expr: |
+          (
+            1 - (
+              node_filesystem_avail_bytes{mountpoint="/var/lib/deltaship"}
+              /
+              node_filesystem_size_bytes{mountpoint="/var/lib/deltaship"}
+            )
+          ) > 0.95
+        for: 5m
+        labels:
+          severity: critical
+          component: storage
+        annotations:
+          summary: "Disk critically full on {{ $labels.instance }}"
+          description: "Disk usage above 95%. Only {{ $value | humanizePercentage }} free. Clean up immediately."
+          runbook: "https://docs.deltaship.io/runbooks#disk-full"
+
+  # ============================================================================
+  # HIGH SEVERITY ALERTS - Action Required Soon
+  # ============================================================================
+
+  - name: deltaship_high_severity_alerts
+    interval: 60s
+    rules:
+      # API latency
+      - alert: DeltashipHighAPILatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(deltaship_api_request_duration_seconds_bucket[5m])) by (le)
+          ) > 5
+        for: 15m
+        labels:
+          severity: high
+          component: api
+        annotations:
+          summary: "API latency p99 is {{ $value }}s (threshold: 5s)"
+          description: "99th percentile API response time above 5 seconds for 15 minutes"
+          runbook: "https://docs.deltaship.io/runbooks#high-latency"
+
+      # Update success rate
+      - alert: DeltashipLowUpdateSuccessRate
+        expr: |
+          (
+            sum(rate(deltaship_updates_total{success="true"}[5m]))
+            /
+            sum(rate(deltaship_updates_total[5m]))
+          ) < 0.99
+        for: 30m
+        labels:
+          severity: high
+          component: updates
+        annotations:
+          summary: "Update success rate is {{ $value | humanizePercentage }} (threshold: 99%)"
+          description: "Update failures above 1% for 30 minutes. Investigate client errors."
+          runbook: "https://docs.deltaship.io/runbooks#low-success-rate"
+
+      # Database connection pool exhaustion
+      - alert: DeltashipDatabaseConnectionPoolExhausted
+        expr: |
+          (
+            deltaship_database_connections{state="waiting"}
+            /
+            sum(deltaship_database_connections) by (instance)
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: high
+          component: database
+        annotations:
+          summary: "Database connection pool exhausted on {{ $labels.instance }}"
+          description: "More than 50% of connections are waiting. Increase pool size or investigate slow queries."
+          runbook: "https://docs.deltaship.io/runbooks#connection-pool-exhausted"
+
+      # Storage upload failures
+      - alert: DeltashipStorageUploadFailures
+        expr: |
+          sum(rate(deltaship_storage_operations_total{operation="upload", status="error"}[5m]))
+          > 0.1
+        for: 15m
+        labels:
+          severity: high
+          component: storage
+        annotations:
+          summary: "High storage upload failure rate"
+          description: "Storage uploads failing at {{ $value }} ops/sec. Check S3/storage credentials."
+          runbook: "https://docs.deltaship.io/runbooks#storage-failures"
+
+      # CPU saturation
+      - alert: DeltashipHighCPUUsage
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 20m
+        labels:
+          severity: high
+          component: system
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}: {{ $value }}%"
+          description: "CPU usage above 90% for 20 minutes. Consider scaling or optimization."
+          runbook: "https://docs.deltaship.io/runbooks#high-cpu"
+
+  # ============================================================================
+  # MEDIUM SEVERITY ALERTS - Should Be Addressed
+  # ============================================================================
+
+  - name: deltaship_medium_severity_alerts
+    interval: 120s
+    rules:
+      # Disk space warning
+      - alert: DeltashipDiskSpaceWarning
+        expr: |
+          (
+            1 - (
+              node_filesystem_avail_bytes{mountpoint="/var/lib/deltaship"}
+              /
+              node_filesystem_size_bytes{mountpoint="/var/lib/deltaship"}
+            )
+          ) > 0.80
+        for: 1h
+        labels:
+          severity: medium
+          component: storage
+        annotations:
+          summary: "Disk usage above 80% on {{ $labels.instance }}"
+          description: "Disk space running low. Plan cleanup or expansion."
+          runbook: "https://docs.deltaship.io/runbooks#disk-warning"
+
+      # Low bandwidth savings
+      - alert: DeltashipLowBandwidthSavings
+        expr: |
+          (
+            sum(rate(deltaship_bandwidth_saved_bytes_total[1h]))
+            /
+            (
+              sum(rate(deltaship_bandwidth_saved_bytes_total[1h]))
+              +
+              sum(rate(deltaship_bandwidth_used_bytes_total[1h]))
+            )
+          ) < 0.80
+        for: 2h
+        labels:
+          severity: medium
+          component: updates
+        annotations:
+          summary: "Bandwidth savings only {{ $value | humanizePercentage }} (expected >90%)"
+          description: "Too many full downloads or inefficient diffs. Check diff generation quality."
+          runbook: "https://docs.deltaship.io/runbooks#low-bandwidth-savings"
+
+      # Slow database queries
+      - alert: DeltashipSlowDatabaseQueries
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(deltaship_database_query_duration_seconds_bucket[5m])) by (le, query_type)
+          ) > 1
+        for: 30m
+        labels:
+          severity: medium
+          component: database
+        annotations:
+          summary: "Slow database queries detected: {{ $labels.query_type }}"
+          description: "Query type {{ $labels.query_type }} p95 latency is {{ $value }}s (threshold: 1s)"
+          runbook: "https://docs.deltaship.io/runbooks#slow-queries"
+
+      # High diff generation time
+      - alert: DeltashipSlowDiffGeneration
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(deltaship_diff_generation_duration_seconds_bucket[5m])) by (le, algorithm)
+          ) > 300
+        for: 1h
+        labels:
+          severity: medium
+          component: diff
+        annotations:
+          summary: "Slow diff generation with {{ $labels.algorithm }}"
+          description: "Diff generation p95 time is {{ $value }}s (5+ minutes). Consider optimization."
+          runbook: "https://docs.deltaship.io/runbooks#slow-diff-generation"
+
+      # Memory pressure
+      - alert: DeltashipMemoryPressure
+        expr: |
+          (
+            1 - (
+              node_memory_MemAvailable_bytes
+              /
+              node_memory_MemTotal_bytes
+            )
+          ) > 0.85
+        for: 30m
+        labels:
+          severity: medium
+          component: system
+        annotations:
+          summary: "Memory pressure on {{ $labels.instance }}: {{ $value | humanizePercentage }}"
+          description: "Memory usage above 85% for 30 minutes. Monitor for potential issues."
+          runbook: "https://docs.deltaship.io/runbooks#memory-pressure"
+
+  # ============================================================================
+  # LOW SEVERITY ALERTS - Informational
+  # ============================================================================
+
+  - name: deltaship_low_severity_alerts
+    interval: 300s
+    rules:
+      # Certificate expiry
+      - alert: DeltashipCertificateExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: low
+          component: security
+        annotations:
+          summary: "TLS certificate expires in {{ $value }} days"
+          description: "Certificate for {{ $labels.instance }} expires soon. Renew before expiration."
+          runbook: "https://docs.deltaship.io/runbooks#certificate-renewal"
+
+      # High number of 4xx errors
+      - alert: DeltashipHighClientErrorRate
+        expr: |
+          (
+            sum(rate(deltaship_api_requests_total{status=~"4.."}[5m]))
+            /
+            sum(rate(deltaship_api_requests_total[5m]))
+          ) > 0.10
+        for: 1h
+        labels:
+          severity: low
+          component: api
+        annotations:
+          summary: "High client error rate: {{ $value | humanizePercentage }}"
+          description: "Many 4xx errors. Check client implementations or API changes."
+
+      # Unusual traffic pattern
+      - alert: DeltashipUnusualTrafficPattern
+        expr: |
+          abs(
+            sum(rate(deltaship_api_requests_total[5m]))
+            -
+            avg_over_time(sum(rate(deltaship_api_requests_total[5m]))[1h:5m])
+          ) / avg_over_time(sum(rate(deltaship_api_requests_total[5m]))[1h:5m]) > 2
+        for: 30m
+        labels:
+          severity: low
+          component: api
+        annotations:
+          summary: "Unusual traffic pattern detected"
+          description: "Traffic is {{ $value }}x different from recent average. Investigate cause."
+
+      # No recent updates published
+      - alert: DeltashipNoRecentPublishes
+        expr: |
+          time() - max(deltaship_version_published_timestamp_seconds) > 604800
+        for: 1h
+        labels:
+          severity: low
+          component: publisher
+        annotations:
+          summary: "No new versions published in 7+ days"
+          description: "Last publish was {{ $value | humanizeDuration }} ago. Is this expected?"
+
+  # ============================================================================
+  # BUSINESS METRICS ALERTS
+  # ============================================================================
+
+  - name: deltaship_business_alerts
+    interval: 300s
+    rules:
+      # Low update adoption rate
+      - alert: DeltashipLowUpdateAdoption
+        expr: |
+          (
+            sum(increase(deltaship_updates_total{success="true"}[24h]))
+            /
+            sum(deltaship_registered_clients_total)
+          ) < 0.50
+        for: 2h
+        labels:
+          severity: low
+          component: business
+        annotations:
+          summary: "Low update adoption rate: {{ $value | humanizePercentage }}"
+          description: "Less than 50% of clients updated in last 24 hours. Check client configuration."
+
+      # Bandwidth cost projection
+      - alert: DeltashipHighBandwidthCost
+        expr: |
+          (
+            sum(increase(deltaship_bandwidth_saved_bytes_total[24h]))
+            +
+            sum(increase(deltaship_bandwidth_used_bytes_total[24h]))
+          ) * 30 * 0.10 / 1e9 > 1000
+        for: 4h
+        labels:
+          severity: low
+          component: business
+        annotations:
+          summary: "Projected monthly bandwidth cost exceeds $1000"
+          description: "Current daily bandwidth projects to ${{ $value }}/month. Review CDN usage."
+
+  # ============================================================================
+  # SECURITY ALERTS
+  # ============================================================================
+
+  - name: deltaship_security_alerts
+    interval: 60s
+    rules:
+      # High rate of signature verification failures
+      - alert: DeltashipHighSignatureVerificationFailures
+        expr: |
+          sum(rate(deltaship_signature_verification_failures_total[5m])) > 0.5
+        for: 15m
+        labels:
+          severity: high
+          component: security
+        annotations:
+          summary: "High rate of signature verification failures"
+          description: "{{ $value }} signature failures/sec. Possible attack or misconfiguration."
+          runbook: "https://docs.deltaship.io/runbooks#signature-failures"
+
+      # Unusual API key usage
+      - alert: DeltashipUnusualAPIKeyUsage
+        expr: |
+          sum by (api_key_id) (rate(deltaship_api_requests_total[5m])) > 100
+        for: 30m
+        labels:
+          severity: medium
+          component: security
+        annotations:
+          summary: "Unusual API key usage: {{ $labels.api_key_id }}"
+          description: "API key {{ $labels.api_key_id }} making {{ $value }} req/sec. Possible abuse."
+
+      # Rate limiting triggered frequently
+      - alert: DeltashipFrequentRateLimiting
+        expr: |
+          sum(rate(deltaship_rate_limit_exceeded_total[5m])) > 10
+        for: 20m
+        labels:
+          severity: medium
+          component: security
+        annotations:
+          summary: "Frequent rate limiting triggered"
+          description: "Rate limit exceeded {{ $value }} times/sec. Possible abuse or misconfigured clients."
+
+  # ============================================================================
+  # OPERATIONAL ALERTS
+  # ============================================================================
+
+  - name: deltaship_operational_alerts
+    interval: 300s
+    rules:
+      # Service restarted recently
+      - alert: DeltashipServiceRestarted
+        expr: time() - process_start_time_seconds{job="deltaship-server"} < 300
+        for: 0m
+        labels:
+          severity: low
+          component: operational
+        annotations:
+          summary: "Deltaship server {{ $labels.instance }} restarted"
+          description: "Service started {{ $value | humanizeDuration }} ago. Check if expected."
+
+      # High log error rate
+      - alert: DeltashipHighLogErrorRate
+        expr: |
+          sum(rate(deltaship_log_messages_total{level="error"}[5m])) > 1
+        for: 20m
+        labels:
+          severity: medium
+          component: operational
+        annotations:
+          summary: "High error log rate: {{ $value }} errors/sec"
+          description: "Check application logs for recurring errors."
+
+      # Prometheus scrape failures
+      - alert: DeltashipPrometheusScrapeFailure
+        expr: up{job="deltaship-server"} == 1 and (time() - scrape_duration_seconds) > 120
+        for: 10m
+        labels:
+          severity: medium
+          component: monitoring
+        annotations:
+          summary: "Prometheus scrape failures for {{ $labels.instance }}"
+          description: "Cannot scrape metrics. Check metrics endpoint or network."
+
+# ============================================================================
+# Alert Testing
+# ============================================================================
+# To test alerts:
+#   1. Ensure Prometheus is scraping Deltaship metrics
+#   2. Check alert evaluation: http://prometheus:9090/alerts
+#   3. Trigger test alert: amtool alert add test severity=low
+#   4. Verify alert routing in Alertmanager
+#
+# Common test scenarios:
+#   - Stop deltaship-server: systemctl stop deltaship-server (triggers DeltashipServerDown)
+#   - Simulate high error rate: Return 500 from API endpoint
+#   - Simulate high latency: Add artificial delay to endpoints
+#   - Fill disk: dd if=/dev/zero of=/var/lib/deltaship/test bs=1M count=1000

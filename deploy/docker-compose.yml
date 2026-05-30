@@ -1,0 +1,66 @@
+# Turnkey deployment for the Deltaship update server.
+#
+# Usage:
+#   cp .env.example .env
+#   # edit .env: set DOMAIN and ACME_EMAIL
+#   # generate API keys (see README.md), write hashes to ./data/api_keys.txt
+#   docker compose up -d
+#
+# Caddy handles TLS termination via Let's Encrypt and proxies to deltaship-server
+# on the internal docker network. The server itself is NOT exposed to the host.
+
+services:
+  deltaship-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    image: deltaship-server:local
+    restart: unless-stopped
+    # No ports published to the host - reachable only via the caddy service
+    # on the internal docker network.
+    expose:
+      - "8080"
+    environment:
+      # Restrict CORS to your domain in production. Comma-separated list.
+      # See crates/deltaship-server/src/main.rs for behavior.
+      DELTASHIP_CORS_ORIGINS: "https://${DOMAIN}"
+    volumes:
+      # Persistent data: catalogs, binaries, diffs, signatures, AND api_keys.txt
+      # The server reads ${data_dir}/api_keys.txt at startup.
+      - ./data:/var/lib/deltaship/data
+    healthcheck:
+      # Server exposes GET /health (not /api/v1/health). Returns 200 with JSON.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - deltaship
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      deltaship-server:
+        condition: service_healthy
+    networks:
+      - deltaship
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  deltaship:
+    driver: bridge

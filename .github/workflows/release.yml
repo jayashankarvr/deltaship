@@ -1,0 +1,277 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Run full test suite before building release artifacts
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run full test suite
+        run: cargo test --all-features --verbose --workspace
+
+      - name: Run clippy
+        run: cargo clippy --all-features --workspace -- -D warnings
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # Build release binaries for all platforms
+  build:
+    name: Build - ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_ext: ''
+            archive_ext: tar.gz
+
+          # Linux x86_64 (musl - static binary)
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binary_ext: ''
+            archive_ext: tar.gz
+
+          # macOS x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary_ext: ''
+            archive_ext: tar.gz
+
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_ext: ''
+            archive_ext: tar.gz
+
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_ext: .exe
+            archive_ext: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Install musl tools for static Linux builds
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --verbose
+
+      - name: Prepare binary artifacts
+        shell: bash
+        run: |
+          # Get the tag version
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+
+          # Create artifacts directory
+          mkdir -p artifacts
+
+          # Binary names (we'll build these for each crate that produces a binary)
+          # For now, this is a workspace, so we need to identify which crates have binaries
+          # Looking at the workspace structure, we have:
+          # - deltaship-client (binary)
+          # - deltaship-publisher (binary)
+          # - deltaship-server (binary)
+
+          # Define the binaries to package
+          BINARIES=("deltaship-client" "deltaship-publisher" "deltaship-server")
+
+          for BINARY in "${BINARIES[@]}"; do
+            BINARY_PATH="target/${{ matrix.target }}/release/${BINARY}${{ matrix.binary_ext }}"
+
+            # Check if binary exists
+            if [ -f "$BINARY_PATH" ]; then
+              ARCHIVE_NAME="${BINARY}-${TAG_NAME}-${{ matrix.target }}"
+
+              # Create archive
+              if [ "${{ matrix.archive_ext }}" = "zip" ]; then
+                7z a "artifacts/${ARCHIVE_NAME}.zip" "$BINARY_PATH" LICENSE-MIT LICENSE-APACHE README.md
+              else
+                tar czf "artifacts/${ARCHIVE_NAME}.tar.gz" -C "target/${{ matrix.target }}/release" "${BINARY}${{ matrix.binary_ext }}" -C ../../../../ LICENSE-MIT LICENSE-APACHE README.md
+              fi
+            fi
+          done
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd artifacts
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            for file in *; do
+              certutil -hashfile "$file" SHA256 | grep -v ":" >> ../checksums-${{ matrix.target }}.txt
+            done
+          else
+            shasum -a 256 * > ../checksums-${{ matrix.target }}.txt
+          fi
+          cd ..
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: |
+            artifacts/*
+            checksums-${{ matrix.target }}.txt
+          retention-days: 1
+
+  # Create GitHub release with all artifacts
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Combine checksums
+        run: |
+          cat release-artifacts/*/checksums-*.txt > SHA256SUMS.txt
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+          # Extract changelog for this version if it exists
+          if [ -f CHANGELOG.md ]; then
+            echo "## Release Notes" > release_notes.md
+            echo "" >> release_notes.md
+            sed -n "/## \[$TAG_NAME\]/,/## \[/p" CHANGELOG.md | sed '$d' >> release_notes.md || true
+          else
+            echo "## Release $TAG_NAME" > release_notes.md
+            echo "" >> release_notes.md
+            echo "See commit history for changes." >> release_notes.md
+          fi
+
+          echo "" >> release_notes.md
+          echo "## Installation" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "Download the appropriate binary for your platform below." >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Verify Downloads" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "All release artifacts include SHA256 checksums. Verify your download:" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "\`\`\`bash" >> release_notes.md
+          echo "# On Linux/macOS:" >> release_notes.md
+          echo "shasum -a 256 -c SHA256SUMS.txt" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "# On Windows (PowerShell):" >> release_notes.md
+          echo "Get-FileHash <filename> -Algorithm SHA256" >> release_notes.md
+          echo "\`\`\`" >> release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.release_notes.outputs.tag_name }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(steps.release_notes.outputs.tag_name, 'alpha') || contains(steps.release_notes.outputs.tag_name, 'beta') || contains(steps.release_notes.outputs.tag_name, 'rc') }}
+          files: |
+            release-artifacts/*/*
+            SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish to crates.io (dry-run for now)
+  publish-crates:
+    name: Publish to crates.io (dry-run)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Dry-run publish deltaship-core
+        run: cargo publish --dry-run -p deltaship-core
+
+      - name: Dry-run publish deltaship-crypto
+        run: cargo publish --dry-run -p deltaship-crypto
+
+      - name: Dry-run publish deltaship-diff
+        run: cargo publish --dry-run -p deltaship-diff
+
+      - name: Dry-run publish deltaship-db
+        run: cargo publish --dry-run -p deltaship-db
+
+      - name: Dry-run publish deltaship-publisher
+        run: cargo publish --dry-run -p deltaship-publisher
+
+      - name: Dry-run publish deltaship-server
+        run: cargo publish --dry-run -p deltaship-server
+
+      - name: Dry-run publish deltaship-client
+        run: cargo publish --dry-run -p deltaship-client
+
+      # Uncomment these steps when ready to actually publish
+      # - name: Publish deltaship-core
+      #   run: cargo publish -p deltaship-core --token ${{ secrets.CRATES_IO_TOKEN }}
+      #
+      # - name: Publish deltaship-crypto
+      #   run: cargo publish -p deltaship-crypto --token ${{ secrets.CRATES_IO_TOKEN }}
+      #
+      # (continue for other crates in dependency order)
+
+  # Post-release notification
+  notify:
+    name: Post-release Tasks
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "version=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Summary
+        run: |
+          echo "## Release Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Verify release artifacts on GitHub" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Test binaries on each platform" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Update documentation if needed" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Announce release on social media/blog" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Monitor for issues" >> $GITHUB_STEP_SUMMARY

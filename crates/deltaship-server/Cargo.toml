@@ -1,0 +1,49 @@
+[package]
+name = "deltaship-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deltaship Update Server - REST API for serving software updates"
+
+[lib]
+name = "deltaship_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "deltaship-server"
+path = "src/main.rs"
+
+[dependencies]
+deltaship-core.workspace = true
+deltaship-crypto.workspace = true
+axum = { workspace = true, features = ["multipart"] }
+tokio = { workspace = true, features = ["fs"] }
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+clap_complete = "4"
+tower.workspace = true
+tower-http = { version = "0.6", features = ["fs", "trace", "cors", "limit"] }
+thiserror.workspace = true
+tokio-util = { version = "0.7", features = ["io"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+blake3.workspace = true
+rand = "0.8"
+base64 = "0.22"
+subtle = "2.5"
+regex = "1"
+fs4 = "0.12"
+argon2 = "0.5"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+tower = { workspace = true, features = ["util"] }
+axum = { workspace = true, features = ["multipart"] }
+tokio = { workspace = true, features = ["full"] }
+serde_json = { workspace = true }
+http-body-util = "0.1"

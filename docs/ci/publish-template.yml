@@ -1,0 +1,158 @@
+# Deltaship publish workflow. Copy to .github/workflows/publish.yml in your app
+# repo. Triggers on tag push (vX.Y.Z). Builds on four platforms, then
+# registers + signs + publishes each binary to a deltaship-server.
+# Required secrets: DELTASHIP_SERVER_URL, DELTASHIP_API_KEY, DELTASHIP_SIGNING_KEY,
+# DELTASHIP_SIGNING_PASSPHRASE. See docs/ci/README.md.
+
+name: Publish to Deltaship
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  # CHANGE ME: your application's binary name (must match `cargo build` output).
+  APP_NAME: myapp
+  # Pin the deltaship-publisher version your CI uses. There are no public binary
+  # releases of deltaship-publisher yet, so we build it from source at this ref.
+  # CHANGE ME (optional): bump to a tagged release once jayashankarvr/deltaship ships them.
+  DELTASHIP_REF: main
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            ext: ''
+          - os: macos-13
+            platform: macos-x86_64
+            ext: ''
+          - os: macos-14
+            platform: macos-aarch64
+            ext: ''
+          - os: windows-latest
+            platform: windows-x86_64
+            ext: '.exe'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
+
+      # CHANGE ME: replace with your app's build command if it isn't a single
+      # cargo crate at the repo root. The output binary must land at
+      # target/release/${APP_NAME}${ext}.
+      - name: Build application binary
+        shell: bash
+        run: cargo build --release --bin "${APP_NAME}"
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir -p staging
+          cp "target/release/${APP_NAME}${{ matrix.ext }}" "staging/${APP_NAME}${{ matrix.ext }}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.platform }}
+          path: staging/*
+          retention-days: 1
+
+  publish:
+    name: Publish to Deltaship server
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: deltaship-publisher-${{ env.DELTASHIP_REF }}
+
+      # Build deltaship-publisher from source. There is no public binary release of
+      # deltaship-publisher at the time this template was written; switch to a
+      # `gh release download` step once one exists.
+      - name: Build deltaship-publisher
+        run: |
+          git clone --depth 1 --branch "${DELTASHIP_REF}" https://github.com/jayashankarvr/deltaship.git /tmp/deltaship
+          cargo build --release --manifest-path /tmp/deltaship/Cargo.toml -p deltaship-publisher
+          sudo install -m 0755 /tmp/deltaship/target/release/deltaship-publisher /usr/local/bin/deltaship-publisher
+          deltaship-publisher --version
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # `register` requires the publisher DB to exist (`deltaship-publisher init`
+      # creates it). We init with the real passphrase, then overwrite the
+      # generated signing key with the persistent one from secrets so every
+      # release in this repo uses the same keypair.
+      - name: Initialise publisher workspace
+        env:
+          DELTASHIP_SERVER_URL: ${{ secrets.DELTASHIP_SERVER_URL }}
+          DELTASHIP_SIGNING_KEY: ${{ secrets.DELTASHIP_SIGNING_KEY }}
+          DELTASHIP_SIGNING_PASSPHRASE: ${{ secrets.DELTASHIP_SIGNING_PASSPHRASE }}
+        run: |
+          deltaship-publisher init --passphrase "$DELTASHIP_SIGNING_PASSPHRASE"
+          printf '%s' "$DELTASHIP_SIGNING_KEY" > .deltaship/keys/signing.key
+          chmod 600 .deltaship/keys/signing.key
+          deltaship-publisher config set server.url "$DELTASHIP_SERVER_URL"
+
+      - name: Register, sign, and publish each platform
+        env:
+          VERSION: ${{ github.ref_name }}
+          DELTASHIP_SERVER_URL: ${{ secrets.DELTASHIP_SERVER_URL }}
+          DELTASHIP_API_KEY: ${{ secrets.DELTASHIP_API_KEY }}
+          DELTASHIP_SIGNING_PASSPHRASE: ${{ secrets.DELTASHIP_SIGNING_PASSPHRASE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Strip the leading 'v' from the tag (v1.2.3 -> 1.2.3) for semver.
+          SEMVER="${VERSION#v}"
+
+          # CHANGE ME: add or remove platforms here to match the build matrix.
+          declare -A PLATFORMS=(
+            [linux-x86_64]=""
+            [macos-x86_64]=""
+            [macos-aarch64]=""
+            [windows-x86_64]=".exe"
+          )
+
+          for platform in "${!PLATFORMS[@]}"; do
+            ext="${PLATFORMS[$platform]}"
+            bin="artifacts/app-${platform}/${APP_NAME}${ext}"
+
+            echo "::group::Publish ${APP_NAME} ${SEMVER} (${platform})"
+            deltaship-publisher register \
+              --name "$APP_NAME" \
+              --version "$SEMVER" \
+              --file "$bin" \
+              --platform "$platform" \
+              --description "Release ${VERSION}"
+
+            deltaship-publisher sign \
+              --name "$APP_NAME" \
+              --version "$SEMVER" \
+              --passphrase "$DELTASHIP_SIGNING_PASSPHRASE"
+
+            deltaship-publisher publish \
+              --name "$APP_NAME" \
+              --version "$SEMVER" \
+              --server-url "$DELTASHIP_SERVER_URL" \
+              --api-key "$DELTASHIP_API_KEY" \
+              --yes
+            echo "::endgroup::"
+          done
