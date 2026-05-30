@@ -16,9 +16,8 @@ version = "0.2.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Jayashankar"]
-description = "Versioned Binary Delta Patcher - A secure binary update system"
+description = "Deltaship - Version-Aware Binary Differential Update System"
 license = "Apache-2.0"
-# TODO: Before public release, update to actual GitHub organization
 repository = "https://github.com/jayashankarvr/deltaship"
 
 [workspace.dependencies]
