@@ -2,12 +2,11 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)]()
 [![Crates.io](https://img.shields.io/crates/v/deltaship.svg)]()
-<!-- TODO: Before public release, update to actual GitHub organization -->
 [![CI](https://img.shields.io/github/actions/workflow/status/jayashankarvr/deltaship/ci.yml?branch=main)]()
 
 A high-performance binary differential update system designed for efficient software distribution.
 
-> **Note:** Deltaship is currently in pre-release development (v0.1.0). APIs and features may change before the stable 1.0 release.
+> **Note:** Deltaship is currently in pre-release development (v0.2.0). APIs and features may change before the stable 1.0 release.
 
 ## Features
 
@@ -40,7 +39,6 @@ Deltaship is currently in development and not yet published to crates.io. Instal
 
 ```bash
 # Clone the repository
-# TODO: Before public release, update to actual GitHub organization
 git clone https://github.com/jayashankarvr/deltaship.git
 cd deltaship
 
@@ -67,51 +65,61 @@ Deltaship consists of three main components:
 
 ### Publisher Toolkit
 
-Generates binary diffs between versions and signs them for distribution.
+Registers, signs, and publishes versions; binary diffs against recent versions are generated automatically.
 
 ```bash
-# Generate a patch between versions
-deltaship-publisher diff --old v1.0.0/app --new v1.1.0/app --output patch-1.0-1.1.deltaship
+# One-time: create the project workspace + Ed25519 keypair
+deltaship-publisher init --passphrase "$SIGNING_PASSPHRASE"
 
-# Sign the patch
-deltaship-publisher sign --patch patch-1.0-1.1.deltaship --key private.key
+# Per release & platform: register the built binary (auto-generates diffs)
+deltaship-publisher register --name myapp --version 1.1.0 \
+  --platform linux-x86_64 --file ./build/myapp
+
+# Sign it, then publish binary + signature + diffs to the server
+deltaship-publisher sign    --name myapp --version 1.1.0 --passphrase "$SIGNING_PASSPHRASE"
+deltaship-publisher publish --name myapp --version 1.1.0 \
+  --server-url https://updates.example.com --api-key "$DELTASHIP_API_KEY"
 ```
 
 ### Update Server
 
-Serves patches to clients and manages version metadata.
+Hosts binaries, diffs, and signatures (file-based storage, no database) and answers update checks.
 
 ```bash
-# Start the update server
-deltaship-server --config server.toml --port 8080
+# Generate + register an API key, then start the server
+KEY=$(deltaship-server --generate-api-key)
+echo "$KEY" | deltaship-server hash-key >> ./data/api_keys.txt
+
+deltaship-server --host 0.0.0.0 --port 8080 --data-dir ./data
+# No built-in TLS — terminate HTTPS at a reverse proxy (see deploy/Caddyfile)
 ```
 
-### Client Patcher
+### Client / Updater
 
-Downloads and applies updates on end-user systems.
+Downloads a diff (or full binary), verifies hash + Ed25519 signature against a pinned key, then atomically replaces the installed binary.
 
 ```bash
-# Check for updates and apply
-deltaship-client update --current-version 1.0.0 --server https://updates.example.com
+# Register the installed binary once, pinning the publisher's public key
+deltaship-client add --name myapp \
+  --path /opt/myapp/bin/myapp --public-key-file publisher.pub
+
+# Apply updates (verify-then-replace, with backup for rollback)
+deltaship-client update --name myapp
 ```
 
-## Basic Usage
+## Embedding the Updater
 
-```rust
-use deltaship::{DiffGenerator, Patcher};
+To keep an application up to date, bundle the `deltaship-updater` sidecar alongside it and run it on startup. Branch on the exit code — `0` = up to date, `2` = updated (restart your app), `1` = error:
 
-// Generate a diff
-let diff = DiffGenerator::new()
-    .old_file("app-v1.0")
-    .new_file("app-v1.1")
-    .generate()?;
-
-// Apply a patch
-let patcher = Patcher::new()
-    .source("app-v1.0")
-    .patch(&diff)
-    .apply("app-v1.1")?;
+```bash
+deltaship-updater \
+  --name         myapp \
+  --install-path /opt/myapp/bin/myapp \
+  --server-url   https://updates.example.com \
+  --public-key   /opt/myapp/publisher.pub
 ```
+
+Integration is just *spawn a process + read the exit code*, so it works from any language. See the [Integration & Adoption Guide](docs/integration/INTEGRATION_GUIDE.md) and [Language Examples](docs/integration/LANGUAGE_EXAMPLES.md) (C, C++, C#, Go, Python, Node/Electron, Java, Rust, shell) for complete, copy-paste examples.
 
 ## Documentation
 
