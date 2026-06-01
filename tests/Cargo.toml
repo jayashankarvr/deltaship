@@ -23,7 +23,7 @@ deltaship-diff = { path = "../crates/deltaship-diff" }
 deltaship-crypto = { path = "../crates/deltaship-crypto" }
 
 # Async runtime
-tokio = { version = "1.43", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 
 # File locking
 fs2 = "0.4"

@@ -49,7 +49,7 @@ hex = "0.4"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 
 # Async runtime
-tokio = { version = "1.43", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
