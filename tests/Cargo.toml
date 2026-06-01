@@ -38,7 +38,7 @@ tempfile = "3.0"
 wiremock = "0.6"
 
 # HTTP client for integration tests
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 
 # Cryptography dependencies for E2E testing
 blake3 = "1.5"
