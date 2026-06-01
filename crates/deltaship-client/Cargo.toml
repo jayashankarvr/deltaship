@@ -52,7 +52,7 @@ uuid = { version = "1.11", features = ["v4"] }
 walkdir = "2.5"
 chrono = "0.4"
 blake3.workspace = true
-indicatif = "0.17"
+indicatif = "0.18"
 sysinfo = "0.32"
 tempfile = "3.13"
 fs2 = "0.4"
