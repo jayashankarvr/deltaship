@@ -39,7 +39,7 @@ semver = { version = "1.0", features = ["serde"] }
 
 # Cryptography
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
-blake3 = "1.5"
+blake3 = "1.8"
 sha2 = "0.10"
 rand = "0.8"
 zeroize = { version = "1.8", features = ["derive"] }
